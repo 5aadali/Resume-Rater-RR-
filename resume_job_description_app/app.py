@@ -1,8 +1,9 @@
 import os
-from flask import Flask, request, render_template, jsonify
+import re
+import csv
+from flask import Flask, request, render_template
 import pickle
 import pdfplumber
-import re
 from sklearn.metrics.pairwise import cosine_similarity
 from werkzeug.utils import secure_filename
 
@@ -26,25 +27,6 @@ def pdf_to_text(file_path):
                 text += page_text + '\n'
         return text
 
-def extract_resume_sections(resume_text):
-    sections = {}
-    job_description_pattern = r'(?<=Job Description:)\s*(.*?)(?=\n|$)'
-    skills_pattern = r'(?<=Skills:)\s*(.*?)(?=\n|$)'
-    experience_pattern = r'(?<=Experience:)\s*(.*?)(?=\n|$)'
-    interest_pattern = r'(?<=Interests:)\s*(.*?)(?=\n|$)'
-    
-    job_description = re.search(job_description_pattern, resume_text, re.IGNORECASE | re.DOTALL)
-    skills = re.search(skills_pattern, resume_text, re.IGNORECASE | re.DOTALL)
-    experience = re.search(experience_pattern, resume_text, re.IGNORECASE | re.DOTALL)
-    interests = re.search(interest_pattern, resume_text, re.IGNORECASE | re.DOTALL)
-    
-    sections['job_description'] = job_description.group(1).strip() if job_description else None
-    sections['skills'] = skills.group(1).strip() if skills else None
-    sections['experience'] = experience.group(1).strip() if experience else None
-    sections['interests'] = interests.group(1).strip() if interests else None
-    
-    return sections
-
 def clean_resume(txt):
     clean_text = re.sub(r'http\S+\s', ' ', txt)
     clean_text = re.sub(r'RT|cc', ' ', clean_text)
@@ -66,6 +48,55 @@ def rate_resume_similarity(resume_features, job_description_text):
     else:
         return 'Low Match', similarity_score
 
+def save_to_csv(data):
+    csv_file = 'cv_sections.csv'
+    file_exists = os.path.isfile(csv_file)
+
+    with open(csv_file, 'a', newline='') as csvfile:
+        fieldnames = ['Name', 'Category', 'Education', 'Experience', 'Skills', 'Projects', 'Probability Score']
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+
+        if not file_exists:
+            writer.writeheader()
+
+        writer.writerow(data)
+
+def extract_section(cv_text, section_name):
+    pattern = re.compile(
+        rf'(?i)^{section_name}.*?^(Experience|Skills|Projects|Certifications|Languages|$)',
+        re.MULTILINE | re.DOTALL
+    )
+    match = pattern.search(cv_text)
+    if match:
+        section = match.group(0).strip()
+        next_section = re.split(r'^(Experience|Skills|Projects|Certifications|Languages)', section, maxsplit=1)
+        return next_section[0].strip() if next_section else section
+    return f"{section_name} section not found."
+
+def extract_section1(cv_text, section_name):
+    pattern = re.compile(
+        rf'(?i)^{section_name}.*?^(Experience|Projects|Certifications|Languages|$)',
+        re.MULTILINE | re.DOTALL
+    )
+    match = pattern.search(cv_text)
+    if match:
+        section = match.group(0).strip()
+        next_section = re.split(r'^(Experience|Projects|Certifications|Languages)', section, maxsplit=1)
+        return next_section[0].strip() if next_section else section
+    return f"{section_name} section not found."
+
+def extract_section2(cv_text, section_name):
+    pattern = re.compile(
+        rf'(?i)^{section_name}.*?^(Certifications|Languages|$)',
+        re.MULTILINE | re.DOTALL
+    )
+    match = pattern.search(cv_text)
+    if match:
+        section = match.group(0).strip()
+        next_section = re.split(r'^(Certifications|Languages)', section, maxsplit=1)
+        return next_section[0].strip() if next_section else section
+    return f"{section_name} section not found."
+
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -74,7 +105,7 @@ def index():
 def upload_files():
     if 'resume' not in request.files or ('job_description' not in request.files and 'job_description_text' not in request.form and 'job_keywords' not in request.form):
         return render_template('index.html', error='No file part')
-    
+
     resume_file = request.files['resume']
     job_description_file = request.files['job_description']
     job_description_text = request.form.get('job_description_text')
@@ -82,7 +113,7 @@ def upload_files():
     
     if resume_file.filename == '' or (job_description_file.filename == '' and not job_description_text and not job_keywords):
         return render_template('index.html', error='No selected file')
-    
+
     resume_filename = secure_filename(resume_file.filename)
     job_description_filename = secure_filename(job_description_file.filename) if job_description_file else None
     
@@ -92,33 +123,57 @@ def upload_files():
     resume_file.save(resume_path)
     if job_description_file:
         job_description_file.save(job_description_path)
-    
+
     resume_text = pdf_to_text(resume_path)
     cleaned_resume = clean_resume(resume_text)
-    resume_sections = extract_resume_sections(resume_text)
-    job_description_text = resume_sections['job_description']
-    skills_text = resume_sections['skills']
-    experience_text = resume_sections['experience']
-    interests_text = resume_sections['interests']
+    resume_sections = {
+        'Education': extract_section(resume_text, 'Education'),
+        'Experience': extract_section(resume_text, 'Experience'),
+        'Skills': extract_section1(resume_text, 'Skills'),
+        'Projects': extract_section2(resume_text, 'Projects')
+    }
 
+    # Debugging output
+    print("Education Section:", resume_sections['Education'])
+    print("Experience Section:", resume_sections['Experience'])
+    print("Skills Section:", resume_sections['Skills'])
+    print("Projects Section:", resume_sections['Projects'])
+
+    job_description_text = resume_sections.get('Education', '')  # Use a default value if needed
     cleaned_job_description = clean_resume(job_description_text) if job_description_text else ''
-    cleaned_skills = clean_resume(skills_text) if skills_text else ''
-    cleaned_experience = clean_resume(experience_text) if experience_text else ''
-    cleaned_interests = clean_resume(interests_text) if interests_text else ''
-
+    
     resume_features = tfidf.transform([cleaned_resume])
     prediction_id = clf.predict(resume_features)[0]
     match_rating, similarity_score = rate_resume_similarity(resume_features, cleaned_job_description)
     rounded_similarity_score = round(similarity_score, 2)
 
+    # Save the details to CSV
+    name = "Unknown"  # Replace with actual logic if available
+    probability_score = rounded_similarity_score
+    csv_data = {
+        'Name': name,
+        'Category': prediction_id,
+        'Education': resume_sections['Education'],
+        'Experience': resume_sections['Experience'],
+        'Skills': resume_sections['Skills'],
+        'Projects': resume_sections['Projects'],
+        'Probability Score': probability_score
+    }
+    save_to_csv(csv_data)
+
+    # Prepare CSV data for rendering
+    csv_data_for_template = [
+        {'Section': 'Education', 'Content': resume_sections['Education']},
+        {'Section': 'Experience', 'Content': resume_sections['Experience']},
+        {'Section': 'Skills', 'Content': resume_sections['Skills']},
+        {'Section': 'Projects', 'Content': resume_sections['Projects']}
+    ]
+
     return render_template('index.html', 
                            prediction_category=prediction_id,
                            resume_match_rating=match_rating,
                            numerical_similarity_score=rounded_similarity_score,
-                           job_description=job_description_text,
-                           skills=skills_text,
-                           experience=experience_text,
-                           interests=interests_text)
+                           csv_data=csv_data_for_template)
 
 if __name__ == '__main__':
     if not os.path.exists('uploads'):

@@ -42,7 +42,7 @@
         input[type="submit"]:hover {
             background: #0056b3;
         }
-        .result {
+        .result, .csv-results {
             margin-top: 20px;
             background: #fff;
             padding: 20px;
@@ -51,6 +51,17 @@
         }
         .error {
             color: red;
+        }
+        .csv-results table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .csv-results th, .csv-results td {
+            border: 1px solid #ddd;
+            padding: 8px;
+        }
+        .csv-results th {
+            background-color: #f2f2f2;
         }
     </style>
 </head>
@@ -104,6 +115,27 @@
                 <p><strong>Prediction Category:</strong> {{ prediction_category }}</p>
                 <p><strong>Resume Match Rating:</strong> {{ resume_match_rating }}</p>
                 <p><strong>Numerical Similarity Score:</strong> {{ numerical_similarity_score }}</p>
+            </div>
+        {% endif %}
+        {% if csv_data %}
+            <div class="csv-results">
+                <h2>Extracted CV Sections:</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Section</th>
+                            <th>Content</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for section in csv_data %}
+                            <tr>
+                                <td>{{ section.Section }}</td>
+                                <td>{{ section.Content }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
             </div>
         {% endif %}
     </div>
