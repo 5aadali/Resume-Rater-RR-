@@ -9,12 +9,10 @@ from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 
-# Define paths for the model and vectorizer files
 base_dir = os.path.dirname(os.path.abspath(__file__))
 tfidf_path = os.path.join(base_dir, 'Old models', 'tfidf.pkl')
 clf_path = os.path.join(base_dir, 'Old models', 'clf.pkl')
 
-# Load the TF-IDF vectorizer and model
 tfidf = pickle.load(open(tfidf_path, 'rb'))
 clf = pickle.load(open(clf_path, 'rb'))
 
@@ -133,13 +131,13 @@ def upload_files():
         'Projects': extract_section2(resume_text, 'Projects')
     }
 
-    # Debugging output
+    
     print("Education Section:", resume_sections['Education'])
     print("Experience Section:", resume_sections['Experience'])
     print("Skills Section:", resume_sections['Skills'])
     print("Projects Section:", resume_sections['Projects'])
 
-    job_description_text = resume_sections.get('Education', '')  # Use a default value if needed
+    job_description_text = resume_sections.get('Education', '') 
     cleaned_job_description = clean_resume(job_description_text) if job_description_text else ''
     
     resume_features = tfidf.transform([cleaned_resume])
@@ -147,8 +145,7 @@ def upload_files():
     match_rating, similarity_score = rate_resume_similarity(resume_features, cleaned_job_description)
     rounded_similarity_score = round(similarity_score, 2)
 
-    # Save the details to CSV
-    name = "Unknown"  # Replace with actual logic if available
+    name = "Unknown"  
     probability_score = rounded_similarity_score
     csv_data = {
         'Name': name,
